@@ -52,3 +52,29 @@ await test('no admite tokens falsos ni contraseñas dentro del estado',async()=>
  assert.equal((await call(state,{expected:2,operationId:crypto.randomUUID(),state:empty},'fake')).status,401);
  assert.equal((await call(state,{expected:2,operationId:crypto.randomUUID(),state:{...empty,password}})).status,400);
 });
+
+const {handler:deviceHandler}=await import('../netlify/functions/device.mjs');
+let deviceToken;
+await test('equipo nuevo no puede leer sin habilitación',async()=>{
+ const r=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+'/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-api-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({returnSecureToken:true})});deviceToken=(await r.json()).idToken;
+ const data=await call(state,null,deviceToken);assert.equal(data.status,403);
+});
+await test('solo propietario habilita la recepción del equipo',async()=>{
+ assert.equal((await call(deviceHandler,{deviceToken},deviceToken)).status,403);
+ assert.equal((await call(deviceHandler,{deviceToken})).status,200);
+ const data=await call(state,null,deviceToken);assert.equal(data.status,200);assert.equal(data.role,'reception');
+});
+await test('recepción guarda cliente y lo recupera en otra lectura',async()=>{
+ const old=await call(state,null,deviceToken),next=structuredClone(old.state);
+ next.clients.push({id:98765,name:'Recepción emulada',phone:''});
+ const result=await call(state,{state:next,expected:old.revision,operationId:crypto.randomUUID()},deviceToken);assert.equal(result.status,200,JSON.stringify(result));
+ const read=await call(state,null,deviceToken);assert.ok(read.state.clients.some(c=>c.id===98765));
+});
+await test('recepción no cambia comisiones ni crea otra cuenta',async()=>{
+ const old=await call(state,null,deviceToken),next=structuredClone(old.state);next.productRates={0:99};
+ assert.equal((await call(state,{state:next,expected:old.revision,operationId:crypto.randomUUID()},deviceToken)).status,403);
+ assert.equal((await call(accounts,null,deviceToken)).status,403);
+});
+await test('otro propietario no puede trasladar equipo a su barbería',async()=>{
+ assert.equal((await call(deviceHandler,{deviceToken},otherToken)).status,403);
+});

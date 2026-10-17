@@ -7,6 +7,7 @@ const command={action:'create',requestId:'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
 test('solo propietario activo y recientemente autenticado',()=>{
  for(const m of [null,{...owner,active:false},{...owner,role:'reception'},{...owner,role:'barber'}])assert.throws(()=>requireOwner(m,token,now,true));
  assert.throws(()=>requireOwner(owner,{...token,auth_time:token.auth_time-600},now,true),/Confirma/);
+ assert.throws(()=>requireOwner(owner,{...token,firebase:{sign_in_provider:'anonymous'}},now),/Inicia/);
  assert.equal(requireOwner(owner,token,now,true).role,'owner');
 });
 test('no se puede editar otra barbería, propietario ni cuenta propia',()=>{

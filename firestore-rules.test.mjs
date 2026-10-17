@@ -12,14 +12,14 @@ try{
      await setDoc(doc(c.firestore(),'memberships',uid),{role,tenantId,active:true});
  });
  await env.withSecurityRulesDisabled(c=>setDoc(doc(c.firestore(),path),record()));
- await test('propietario puede leer el estado de su barbería',()=>assertSucceeds(getDoc(doc(env.authenticatedContext('owner').firestore(),path))));
+ await test('propietario puede leer el estado de su barbería',()=>assertSucceeds(getDoc(doc(env.authenticatedContext('owner',{firebase:{sign_in_provider:'password'}}).firestore(),path))));
  await test('anónimo, otro local y recepción no pueden leer',async()=>{
-   for(const c of [env.unauthenticatedContext(),env.authenticatedContext('other'),env.authenticatedContext('staff')])await assertFails(getDoc(doc(c.firestore(),path)));
+   for(const c of [env.authenticatedContext('owner',{firebase:{sign_in_provider:'anonymous'}}),env.unauthenticatedContext(),env.authenticatedContext('other'),env.authenticatedContext('staff')])await assertFails(getDoc(doc(c.firestore(),path)));
  });
  await test('no puede autoasignarse permisos',()=>assertFails(setDoc(doc(env.authenticatedContext('staff').firestore(),'memberships','staff'),{role:'owner',tenantId:'piloto',active:true})));
  await test('no puede escribir en otra barbería',()=>assertFails(setDoc(doc(env.authenticatedContext('other').firestore(),path),{...record(2),updatedBy:'other'})));
  await test('escritura directa rechazada incluso con UID y revisión válidos',async()=>{
-   const ref=doc(env.authenticatedContext('owner').firestore(),path);
+   const ref=doc(env.authenticatedContext('owner',{firebase:{sign_in_provider:'password'}}).firestore(),path);
    await assertFails(setDoc(ref,record(1)));
    await assertFails(setDoc(ref,{...record(2),updatedBy:'staff'}));
    await assertFails(setDoc(ref,record(2))); // Ni el propietario escribe fuera del servidor.

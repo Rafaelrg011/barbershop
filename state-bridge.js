@@ -14,7 +14,7 @@
     ({clients,appointments,movements,promos,schedules,cashSessions,currentCashId,
       cashOpen,opening,closed,historyLog,serial,availabilityHistory,blocks,inventory,
       stockLedger,commissionRules,settlements,productRates}=clone(s));
-    role='Propietario'; historyStart=Object.keys(availabilityHistory).sort()[0]||today;
+    role=window.cloud?.profile||'Recepción'; historyStart=Object.keys(availabilityHistory).sort()[0]||today;
   }
   function empty() {
     return {schema:1,barbers:[],services:[],clients:[],appointments:[],movements:[],
@@ -64,7 +64,7 @@
   logAction=(title,entity=null)=>{originalLog(title,entity);historyLog[0].uid=window.cloud?.uid||null};
   setupPage=()=>{
     $('#main').innerHTML=heading('Configuración','Administración de tu barbería.')+
-      '<section class="panel" style="padding:24px"><h2>Operación</h2><div class="buttons"><button onclick="navigate(\'Equipo\')">Equipo</button><button onclick="navigate(\'Servicios\')">Servicios</button><button onclick="blockForm()">Bloquear horario</button><button onclick="exportDemo()">Descargar registros</button></div><h2>Acceso</h2><p>Cuenta individual de propietario. Recepción y barberos aún no tienen acceso.</p><p>QR: registro de cobros, sin verificación bancaria. WhatsApp: mensajes preparados para envío manual. Informes internos, sin facturación fiscal.</p><p>El informe descargado no es una copia de seguridad restaurable.</p></section>';
+      '<section class="panel" style="padding:24px"><h2>Operación</h2><div class="buttons"><button onclick="navigate(\'Equipo\')">Equipo</button><button onclick="navigate(\'Servicios\')">Servicios</button><button onclick="blockForm()">Bloquear horario</button><button onclick="exportDemo()">Descargar registros</button></div><h2>Acceso</h2><button onclick="window.cloud.enableReception()">Habilitar este equipo para Recepción</button><p>El propietario ingresa con propietario01 y su contraseña. El sistema abre en Recepción; el acceso de Propietario se cierra al actualizar o volver a Recepción. Los registros se guardan en Firebase.</p><p>QR: registro de cobros, sin verificación bancaria. WhatsApp: mensajes preparados para envío manual. Informes internos, sin facturación fiscal.</p><p>El informe descargado no es una copia de seguridad restaurable.</p></section>';
   };
   const originalBooking=bookingForm;
   bookingForm=(...args)=>{
@@ -73,5 +73,5 @@
     if(!schedules.some(s=>s.active))return originalNotify('Agrega un profesional en Equipo.');
     return originalBooking(...args);
   };
-  window.appState={read,apply,empty,render,operation,isActive:()=>active};
+  window.appState={read,apply,empty,render,operation,isActive:()=>active,setProfile(value){role=value;filter='Todos';view='Agenda';$('#role').value=value;render()}};
 })();

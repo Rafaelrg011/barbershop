@@ -1,120 +1,133 @@
-
 const el=id=>document.getElementById(id);
-const message=text=>{el('authMessage').textContent=text};
-let pending=false, revision=0, unsubscribe=null, reference=null, latest=null;
-window.cloud={ready:false,uid:null};
-function lock(text,retry=true){
-  window.cloud.ready=false;
-  window.accountUI?.clear();
-  document.getElementById('modal').close();
-  document.body.classList.add('locked'); el('access').hidden=false;
-  el('loginForm').hidden=retry;el('retry').hidden=!retry; message(text);
+const ownerEmail='pruebapaginas011@gmail.com';
+let revision=0,pending=false,loading=false,epoch=0,ownerAttempt=0;
+let ownerAuth,deviceAuth,Auth,deviceReady;
+window.cloud={ready:false,uid:null,profile:'Recepción'};
+const message=text=>el('authMessage').textContent=text;
+const status=text=>el('connectionStatus').textContent=text;
+function deadline(promise,label,ms=20000){
+ let timer;
+ return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label)),ms)})]).finally(()=>clearTimeout(timer));
 }
 function busy(value){
-  pending=value;el('saving').hidden=!value;
-  document.querySelector('.workspace').inert=value;
-  document.querySelector('aside').inert=value;
-  el('form').inert=value;
-  el('modal').querySelectorAll('button').forEach(b=>b.disabled=value);
+ pending=value;el('saving').hidden=!value;
+ document.querySelector('.workspace').inert=value;document.querySelector('aside').inert=value;
+ el('form').inert=value;el('modal').querySelectorAll('button').forEach(b=>b.disabled=value);
 }
-function adopt(snapshot){
-  if(!snapshot.exists())throw Error('No se encontró la información de esta barbería.');
-  const data=snapshot.data();
-  if(data.schema!==1||!Number.isInteger(data.revision))throw Error('Formato de datos no compatible.');
-  window.appState.apply(JSON.parse(data.payload));revision=data.revision;
-  window.appState.render();
+function currentUser(){return window.cloud.profile==='Propietario'?ownerAuth?.currentUser:deviceAuth?.currentUser}
+function clearState(profile){
+ epoch++;revision=0;window.cloud.ready=false;window.cloud.uid=null;window.cloud.profile=profile;
+ el('modal').close();window.appState.apply(window.appState.empty());window.appState.setProfile(profile);
+ el('logout').hidden=profile!=='Propietario';el('accountEmail').textContent=profile==='Propietario'?'propietario01':'';
 }
+function explain(e){
+ if(e.code==='auth/operation-not-allowed')return 'Activa el proveedor Anónimo en Firebase Authentication para habilitar recepción sin contraseña.';
+ if(e.code==='auth/invalid-credential'||e.code==='auth/wrong-password')return 'Usuario o contraseña incorrectos. Revisa las mayúsculas.';
+ if(e.code==='auth/too-many-requests')return 'Demasiados intentos. Espera unos minutos antes de volver a ingresar.';
+ return e.message||'No se pudo conectar. Vuelve a intentarlo.';
+}
+async function api(path,user,body){
+ if(!user)throw Error('No hay una sesión disponible.');
+ const token=await deadline(user.getIdToken(),'No se pudo comprobar la sesión. Revisa la conexión.');
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
+ try{
+  const res=await fetch('/.netlify/functions/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},credentials:'omit',cache:'no-store',signal:controller.signal,...(body?{body:JSON.stringify(body)}:{})});
+  let data;try{data=await res.json()}catch{throw Error('Netlify no devolvió el servicio de datos. Despliega el proyecto completo con sus funciones; revisa también la protección de acceso de Netlify.');}
+  if(!res.ok)throw Error(data.error||'No se pudo completar la operación.');
+  return data;
+ }catch(e){if(e.name==='AbortError')throw Error('El servidor tardó demasiado. Comprueba la conexión y vuelve a cargar antes de repetir la operación.');throw e}
+ finally{clearTimeout(timer)}
+}
+async function loadState(){
+ const generation=epoch,user=currentUser();
+ const data=await api('state',user);
+ if(generation!==epoch||pending||window.appState.isActive()||data.revision<revision&&window.cloud.ready)return;
+ if((window.cloud.profile==='Propietario'&&data.role!=='owner')||(window.cloud.profile==='Recepción'&&data.role!=='reception'))throw Error('El perfil no coincide con los permisos de la cuenta.');
+ if(!data.state&&data.role==='owner'){
+  await api('state',user,{state:window.appState.empty(),expected:0,operationId:crypto.randomUUID()});
+  return loadState();
+ }
+ if(!data.state)throw Error('El propietario debe preparar la barbería primero.');
+ if(!Number.isSafeInteger(data.revision))throw Error('Respuesta de datos no válida.');
+ window.appState.apply(data.state);revision=data.revision;window.cloud.uid=user.uid;window.cloud.ready=true;window.appState.render();status('Conectado · Cambios confirmados en Firebase');
+}
+async function reception(){
+ if(pending)return;
+ ownerAttempt++;el('access').hidden=true;el('password').value='';clearState('Recepción');status('Conectando recepción…');
+ if(ownerAuth)await Auth.signOut(ownerAuth);
+ try{await deviceReady;await loadState()}catch(e){window.cloud.ready=false;status(explain(e))}
+}
+function openOwner(){
+ if(pending)return;
+ el('role').value=window.cloud.profile;el('access').hidden=false;message('Ingresa para acceder al perfil Propietario.');el('password').focus();
+}
+el('role').onchange=e=>e.target.value==='Propietario'?openOwner():reception();
+el('cancelOwner').onclick=reception;
+el('logout').onclick=reception;
 el('retry').onclick=()=>location.reload();
+window.appState.setProfile('Recepción');status('Conectando recepción…');
+window.cloud.commit=async state=>{
+ if(pending||!window.cloud.ready||!navigator.onLine)throw Error('No se puede guardar ahora. Revisa la conexión.');
+ busy(true);
+ try{const data=await api('state',currentUser(),{state,expected:revision,operationId:crypto.randomUUID()});revision=data.revision;status('Guardado confirmado en Firebase')}
+ catch(e){window.cloud.ready=false;e.cloudFailure=true;status(explain(e)+' El cambio no se confirmó; recarga antes de repetirlo.');throw e}
+ finally{busy(false)}
+};
 async function start(){
-  const config=window.FIREBASE_CONFIG;
-  if(!config?.apiKey||Object.values(config).some(v=>String(v).includes('COMPLETAR'))){
-    lock('Falta configurar Firebase. Completa firebase-config.js con la configuración web de tu proyecto.',false);
-    el('loginForm').hidden=true;return;
-  }
-  const [App,Auth,DB]=await Promise.all([
-    import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js'),
-    import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js'),
-    import('https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js')
-  ]);
-  const app=App.initializeApp(config),auth=Auth.getAuth(app),db=DB.getFirestore(app);
-  // La base de datos usa caché en memoria; no se activa almacenamiento sin conexión.
-  await Auth.setPersistence(auth,Auth.browserSessionPersistence);
-  window.cloud.accountToken=()=>{if(!auth.currentUser)throw Error('Inicia sesión.');return auth.currentUser.getIdToken(true)};
-  window.cloud.confirmOwner=async password=>{
-    const user=auth.currentUser;if(!user?.email)throw Error('Inicia sesión como propietario.');
-    try{await Auth.reauthenticateWithCredential(user,Auth.EmailAuthProvider.credential(user.email,password))}
-    catch{throw Error('No se pudo confirmar tu contraseña de propietario.');}
-  };
-  async function saveState(state,expected){
-    const token=await auth.currentUser.getIdToken();
-    const res=await fetch('/.netlify/functions/state',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},credentials:'omit',cache:'no-store',body:JSON.stringify({state,expected,operationId:crypto.randomUUID()})});
-    let value;try{value=await res.json()}catch{throw Error('El servicio de guardado necesita desplegarse en Netlify.');}
-    if(!res.ok)throw Error(value.error||'No se confirmó el guardado.');return value.revision;
-  }
-  window.cloud.commit=async state=>{
-    if(pending||!window.cloud.ready||!auth.currentUser||!navigator.onLine)
-      throw Error('No se puede guardar. Revisa la conexión.');
-    busy(true);
-    try{
-      revision=await saveState(state,revision);
-    }catch(error){
-      error.cloudFailure=true;
-      error.message=error.code==='permission-denied'?'Tu cuenta no tiene permiso para guardar. Contacta al administrador.':error.message;
-      lock(error.message+'\nEl cambio no se confirmó. Recarga y comprueba los registros antes de repetirlo.');
-      throw error;
-    }finally{busy(false)}
-  };
-  el('loginForm').onsubmit=async event=>{
-    event.preventDefault();const button=event.submitter||el('loginForm').querySelector('button[type=submit]');button.disabled=true;
-    message('Iniciando sesión…');
-    try{await Auth.signInWithEmailAndPassword(auth,el('email').value.trim(),el('password').value);el('password').value=''}
-    catch{message('No se pudo ingresar. Revisa el correo, la contraseña y la conexión.')}
-    finally{button.disabled=false}
-  };
-  el('resetPassword').onclick=async()=>{
-    const email=el('email').value.trim();if(!email)return message('Escribe tu correo para recuperar la contraseña.');
-    try{await Auth.sendPasswordResetEmail(auth,email);message('Si la cuenta está registrada, revisa el correo de recuperación.')}
-    catch{message('No se pudo solicitar la recuperación. Revisa el correo y la conexión.')}
-  };
-  el('logout').onclick=async()=>{if(pending||window.accountUI?.isBusy())return;await Auth.signOut(auth)};
-  Auth.onAuthStateChanged(auth,async user=>{
-    unsubscribe?.();unsubscribe=null;latest=null;reference=null;window.accountUI?.clear();
-    window.cloud.ready=false;window.cloud.uid=null;
-    window.appState.apply(window.appState.empty());
-    el('main').innerHTML='';el('fields').innerHTML='';
-    if(!user){lock('Ingresa con la cuenta de propietario habilitada para tu barbería.',false);return}
-    lock('Comprobando acceso…');el('retry').hidden=true;
-    try{
-      const membership=await DB.getDocFromServer(DB.doc(db,'memberships',user.uid));
-      const m=membership.exists()?membership.data():null;
-      if(!m||m.role!=='owner'||m.active!==true||typeof m.tenantId!=='string'||!m.tenantId||m.tenantId.includes('/'))
-        throw Error(m&&['reception','barber'].includes(m.role)?'Tu cuenta de personal está registrada. El acceso operativo de recepción y barberos aún no está habilitado.':'Cuenta sin acceso de propietario. El administrador debe habilitarla.');
-      window.cloud.uid=user.uid;reference=DB.doc(db,'tenants',m.tenantId,'state','current');
-      let snapshot=await DB.getDocFromServer(reference);
-      if(!snapshot.exists()){
-        try{await saveState(window.appState.empty(),0)}catch(error){
-          const concurrent=await DB.getDocFromServer(reference);if(!concurrent.exists())throw error;
-        }
-        snapshot=await DB.getDocFromServer(reference);
-      }
-      if(auth.currentUser?.uid!==user.uid)return;
-      adopt(snapshot);window.cloud.ready=true;
-      el('accountEmail').textContent=user.email;document.body.classList.remove('locked');el('access').hidden=true;
-      unsubscribe=DB.onSnapshot(reference,{includeMetadataChanges:true},snap=>{
-        if(snap.metadata.fromCache||snap.metadata.hasPendingWrites)return;
-        if(!snap.exists()){lock('La información ya no está disponible.');return}
-        if(snap.data().revision>revision)latest=snap;
-        flushRemote();
-      },()=>lock('No se puede leer la información. Revisa los permisos y vuelve a cargar.'));
-    }catch(error){lock(error.code==='permission-denied'?'Acceso denegado. Revisa las reglas y la asignación de propietario en Firebase.':error.message)}
-  });
-  function flushRemote(){
-    if(!latest||pending||window.appState.isActive()||el('modal').open||!window.cloud.ready)return;
-    try{if(latest.data().revision>revision)adopt(latest);latest=null}
-    catch{lock('No se pudo actualizar la información. Vuelve a cargar.')}
-  }
-  setInterval(flushRemote,500);
-  window.addEventListener('offline',()=>lock('Se perdió la conexión. Los cambios sin confirmación no se guardan. Vuelve a cargar cuando tengas internet.'));
-  window.addEventListener('beforeunload',event=>{if(pending){event.preventDefault();event.returnValue=''}});
+ const [App,A]=await deadline(Promise.all([
+  import('https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js'),
+  import('https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js')
+ ]),'No se pudo cargar Firebase. Comprueba tu conexión y vuelve a cargar.');Auth=A;
+ ownerAuth=Auth.getAuth(App.initializeApp(window.FIREBASE_CONFIG,'owner-profile'));
+ deviceAuth=Auth.getAuth(App.initializeApp(window.FIREBASE_CONFIG,'reception-device'));
+ await deadline(Auth.setPersistence(ownerAuth,Auth.inMemoryPersistence),'No se pudo preparar el acceso del propietario.');
+ deviceReady=(async()=>{
+  await deadline(Auth.setPersistence(deviceAuth,Auth.browserLocalPersistence),'El navegador no permite conservar el acceso de recepción. Revisa los permisos de almacenamiento.');
+  await deadline(deviceAuth.authStateReady(),'No se pudo recuperar la sesión de recepción.');
+  if(!deviceAuth.currentUser)await deadline(Auth.signInAnonymously(deviceAuth),'No se pudo conectar recepción. Comprueba la conexión.');
+ })();
+ // Attach the error handler immediately; owner login remains usable if anonymous auth is disabled.
+ deviceReady.catch(e=>status(explain(e)));
+ el('loginForm').onsubmit=async event=>{
+  event.preventDefault();if(loading)return;
+  const username=el('username').value.trim().toLowerCase();
+  if(username!=='propietario01'&&username!==ownerEmail){message('Revisa el usuario y la contraseña.');return}
+  const attempt=++ownerAttempt;loading=true;el('loginButton').disabled=true;message('Ingresando…');
+  let login;
+  try{
+   login=Auth.signInWithEmailAndPassword(ownerAuth,ownerEmail,el('password').value);
+   // A timed-out or cancelled request must never grant a late owner session.
+   login.then(()=>{if(attempt!==ownerAttempt)Auth.signOut(ownerAuth)}).catch(()=>{});
+   await deadline(login,'El acceso tardó demasiado. Revisa tu conexión y vuelve a intentarlo.');
+   if(attempt!==ownerAttempt)return;
+   clearState('Propietario');message('Cargando datos de la barbería…');await loadState();
+   if(attempt!==ownerAttempt)return;
+   el('access').hidden=true;
+   status('Conectado como propietario. Habilita este equipo para recepción en Configuración.');
+  }catch(e){
+   if(attempt===ownerAttempt){ownerAttempt++;message(explain(e));el('retry').hidden=false;clearState('Recepción');await Auth.signOut(ownerAuth);}
+  }finally{el('password').value='';loading=false;el('loginButton').disabled=false}
+ };
+ el('recover').onclick=async()=>{
+  el('recover').disabled=true;
+  try{await deadline(Auth.sendPasswordResetEmail(ownerAuth,ownerEmail),'La recuperación tardó demasiado. Inténtalo más tarde.');message('Solicitud enviada. Revisa el correo de recuperación y spam.')}
+  catch(e){message(explain(e))}finally{el('recover').disabled=false}
+ };
+ window.cloud.enableReception=async()=>{
+  if(window.cloud.profile!=='Propietario'||!window.cloud.ready)return;
+  try{
+   await deviceReady;
+   const deviceToken=await deadline(deviceAuth.currentUser.getIdToken(),'No se pudo verificar este equipo.');
+   await api('device',ownerAuth.currentUser,{deviceToken});status('Equipo habilitado. Puedes volver a Recepción sin contraseña.');
+  }catch(e){status(explain(e))}
+ };
+ await reception();
+ setInterval(async()=>{
+  if(pending||loading||!window.cloud.ready||window.appState.isActive()||el('modal').open||!el('access').hidden||document.hidden)return;
+  const generation=epoch;try{await loadState()}catch(e){if(generation===epoch){window.cloud.ready=false;status(explain(e)+' Vuelve a cargar.')}}
+ },15000);
 }
-start().catch(()=>lock('No se pudo iniciar Firebase. Revisa la configuración y tu conexión.'));
+el('loginForm').onsubmit=e=>{e.preventDefault();message('Firebase aún no está listo. Revisa el mensaje de conexión.')};
+start().catch(e=>{status(explain(e));message(explain(e));el('retry').hidden=false});
+window.addEventListener('offline',()=>{window.cloud.ready=false;status('Sin conexión. No se registran cambios hasta volver a conectar y recargar.')});
+window.addEventListener('beforeunload',event=>{if(pending){event.preventDefault();event.returnValue=''}});
