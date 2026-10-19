@@ -7,15 +7,21 @@ import {requireOperator,validateReception} from '../../server/operator.mjs';
 const {validateState,validateTransition}=validation;
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const result=(status,body)=>({statusCode:status,headers,body:JSON.stringify(body)});
-export async function handler(event){
+export async function handler(event){return handleState(event,false)}
+export async function handleState(event,publicAccess=false){
  if(!['GET','POST'].includes(event.httpMethod))return result(405,{error:'Método no permitido.'});
  if(event.httpMethod==='POST'&&!(event.headers['content-type']||'').startsWith('application/json'))return result(415,{error:'Formato no permitido.'});
  if(event.isBase64Encoded||Buffer.byteLength(event.body||'')>800000)return result(413,{error:'Se alcanzó el límite de datos de esta integración.'});
  try{
    if(!getApps().length){if(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON)throw new ApiError(503,'Falta configurar el servicio de guardado en Netlify.');initializeApp({credential:cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON))})}
-   const bearer=event.headers.authorization||'';if(!bearer.startsWith('Bearer ')||bearer.length>8192)throw new ApiError(401,'Inicia sesión.');
-   let token;try{token=await getAuth().verifyIdToken(bearer.slice(7),true)}catch{throw new ApiError(401,'Sesión vencida o revocada.');}
-   const db=getFirestore(),member=db.doc('memberships/'+token.uid),owner=requireOperator((await member.get()).data(),token);
+   let token,owner;const db=getFirestore();
+   if(publicAccess){token={uid:'public-access'};owner={tenantId:'piloto',role:'owner',active:true};}
+   else{
+    const bearer=event.headers.authorization||'';if(!bearer.startsWith('Bearer ')||bearer.length>8192)throw new ApiError(401,'Inicia sesión.');
+    try{token=await getAuth().verifyIdToken(bearer.slice(7),true)}catch{throw new ApiError(401,'Sesión vencida o revocada.');}
+    owner=requireOperator((await db.doc('memberships/'+token.uid).get()).data(),token);
+   }
+   const member=db.doc('memberships/'+token.uid);
    const ref=db.doc('tenants/'+owner.tenantId+'/state/current');
    if(event.httpMethod==='GET'){
      const snap=await ref.get();
@@ -28,7 +34,7 @@ export async function handler(event){
    const receipt=db.doc('tenants/'+owner.tenantId+'/stateAudit/'+body.operationId);
    const revision=await db.runTransaction(async tx=>{
      const [memberSnap,snap,receiptSnap]=await Promise.all([tx.get(member),tx.get(ref),tx.get(receipt)]);
-     const currentOwner=requireOperator(memberSnap.data(),token);if(currentOwner.tenantId!==owner.tenantId)throw new ApiError(403,'Cambió el acceso a la barbería.');
+     const currentOwner=publicAccess?owner:requireOperator(memberSnap.data(),token);if(currentOwner.tenantId!==owner.tenantId)throw new ApiError(403,'Cambió el acceso a la barbería.');
      if(receiptSnap.exists){if(receiptSnap.data().actor!==token.uid)throw new ApiError(403,'Operación no disponible.');return receiptSnap.data().revision}
      if((snap.data()?.revision||0)!==body.expected)throw new ApiError(409,'Otra sesión modificó los datos. Recarga y revisa la operación antes de repetirla.');
      if(currentOwner.role==='reception')validateReception(snap.exists?JSON.parse(snap.data().payload):null,body.state);

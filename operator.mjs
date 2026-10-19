@@ -1,7 +1,7 @@
 import {ApiError,requireOwner} from './accounts.mjs';
 export function requireOperator(member,token){
   if(member?.role==='owner')return requireOwner(member,token);
-  if(!member||member.active!==true||member.role!=='reception'||!member.deviceAccess||token.firebase?.sign_in_provider!=='anonymous'||! /^[a-zA-Z0-9_-]{1,80}$/.test(member.tenantId||''))throw new ApiError(403,'Este navegador aún no está habilitado para recepción. Entra al perfil Propietario para habilitarlo.');
+  if(!member||member.active!==true||member.role!=='reception'||!member.deviceAccess||token.firebase?.sign_in_provider!=='anonymous'||! /^[a-zA-Z0-9_-]{1,80}$/.test(member.tenantId||''))throw new ApiError(403,'Este equipo todavía no está habilitado. Usa su código en Firebase según LEEME.md.');
   return member;
 }
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);

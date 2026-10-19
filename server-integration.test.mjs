@@ -70,7 +70,7 @@ await test('recepción guarda cliente y lo recupera en otra lectura',async()=>{
  const result=await call(state,{state:next,expected:old.revision,operationId:crypto.randomUUID()},deviceToken);assert.equal(result.status,200,JSON.stringify(result));
  const read=await call(state,null,deviceToken);assert.ok(read.state.clients.some(c=>c.id===98765));
 });
-await test('recepción no cambia comisiones ni crea otra cuenta',async()=>{
+await test('recepción autenticada no cambia comisiones ni crea otra cuenta',async()=>{
  const old=await call(state,null,deviceToken),next=structuredClone(old.state);next.productRates={0:99};
  assert.equal((await call(state,{state:next,expected:old.revision,operationId:crypto.randomUUID()},deviceToken)).status,403);
  assert.equal((await call(accounts,null,deviceToken)).status,403);
