@@ -1,0 +1,30 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(tenantId) {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && get(/databases/$(database)/documents/memberships/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/memberships/$(request.auth.uid)).data.role == 'owner'
+        && get(/databases/$(database)/documents/memberships/$(request.auth.uid)).data.tenantId == tenantId;
+    }
+    match /memberships/{uid} {
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+    match /tenants/{tenantId}/state/current {
+      allow get: if owner(tenantId);
+      // Todas las escrituras pasan por el servidor validado de Netlify.
+      allow list, create, update, delete: if false;
+    }
+    match /tenants/{tenantId}/accountAudit/{id} {
+      allow read: if owner(tenantId);
+      allow write: if false;
+    }
+    match /tenants/{tenantId}/stateAudit/{id} {
+      allow read: if owner(tenantId);
+      allow write: if false;
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
