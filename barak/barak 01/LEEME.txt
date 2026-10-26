@@ -1,0 +1,2 @@
+BARAK · PRESENTACIÓN
+Sube el contenido de este ZIP dentro de tu carpeta barak en GitHub, reemplazando los archivos existentes. No subas el ZIP ni crees otra subcarpeta. Consulta README.md.
