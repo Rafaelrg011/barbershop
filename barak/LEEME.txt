@@ -1,3 +1,0 @@
-BARAK — DEMO PARA GITHUB
-
-Consulta README.md. Sube los archivos extraídos, con index.html en la raíz del repositorio. Conserva barak-logo.png junto a index.html.
