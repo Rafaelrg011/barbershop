@@ -1,0 +1,21 @@
+BARAK — ACTUALIZACIÓN 29 DE OCTUBRE
+
+120 clientes, 1.966 citas, 90 días de historial y 14 días de próximas reservas.
+Estadísticas y Afluencia abren con las últimas cuatro semanas del historial disponible.
+Se incluyen horarios con distinta afluencia, cobros en efectivo, QR y transferencia, propinas, salarios, promociones y productos.
+
+CÓMO SUBIR
+1. Descomprime este ZIP.
+2. Abre en GitHub el repositorio barbershop y ENTRA en la carpeta existente barak 01.
+3. Agregar archivo > Subir archivos: arrastra el CONTENIDO de este ZIP, no la carpeta ni el ZIP.
+4. Confirma el reemplazo. index.html debe quedar directamente en barak 01.
+5. Espera a que termine la publicación y abre:
+https://rafaelrg011.github.io/barbershop/barak%2001/?v=120-clientes
+
+VERIFICACIÓN
+En Clientes deben aparecer 120 registros al abrir por primera vez.
+En Estadísticas, las dos fechas deben abarcar cuatro semanas, no un único día.
+La pestaña del navegador muestra BARAK · Estadísticas y gestión.
+
+El nuevo conjunto de datos ficticios se carga una sola vez en su propio espacio del navegador. La información de versiones anteriores permanece separada y no se importa. Los cambios nuevos se conservan al recargar; no se sincronizan entre dispositivos.
+Los datos se generan con fechas relativas al primer acceso. No se borran ni se regeneran cada día. Para explorar el historial se pueden cambiar las fechas de los informes.
